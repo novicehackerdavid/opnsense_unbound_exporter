@@ -1,0 +1,13 @@
+version: '3'
+services:
+  unbound_export:
+    build: .
+    container_name: unbound_export
+    ports:
+      - "${EXPORTER_PORT:-9798}:9798"
+    environment:
+      - OPNSENSE_API_KEY=${OPNSENSE_API_KEY}
+      - OPNSENSE_API_SECRET=${OPNSENSE_API_SECRET}
+      - OPNSENSE_HOST=${OPNSENSE_HOST}
+      - EXPORTER_PORT=9798
+    restart: unless-stopped
