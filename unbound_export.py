@@ -9,16 +9,22 @@ import datetime
 from prometheus_client import start_http_server, Gauge
 from flask import Flask, Response
 
+# Debugging flag
+DEBUG_MODE = os.getenv("DEBUG", "false").lower() in ("1", "true", "yes")
+
 # Logging setup
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+log_level = logging.DEBUG if DEBUG_MODE else logging.INFO
+logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Environment configuration
 OPNSENSE_HOST = os.getenv("OPNSENSE_HOST", "192.168.1.1")
 OPNSENSE_PORT = os.getenv("OPNSENSE_PORT", "443")
-EXPORTER_PORT = int(os.getenv("EXPORTER_PORT", "9798"))
+EXPORTER_PORT = int(os.getenv("EXPORTER_PORT", "9797"))
+FLASK_PORT = int(os.getenv("FLASK_PORT", "9798"))  
 API_KEY = os.getenv("OPNSENSE_API_KEY")
 API_SECRET = os.getenv("OPNSENSE_API_SECRET")
 INTERVAL = int(os.getenv("SCRAPE_INTERVAL", "30"))
+DEBUG = os.getenv("DEBUG", "false").lower() in ["1", "true", "yes"]
 
 # Prometheus metrics
 metrics = {
@@ -34,7 +40,7 @@ top_domains_metric = Gauge('unbound_top_domain_queries_total', 'Top queried doma
 top_blocked_metric = Gauge('unbound_top_blocked_domain_queries_total', 'Top blocked domains', ['domain', 'blocklist'])
 
 def build_auth_headers(api_key, api_secret, path):
-    nonce = str(int(time.time() * 1000))  # use Unix timestamp in milliseconds
+    nonce = str(int(time.time() * 1000))  # Unix timestamp in milliseconds
     message = f"{nonce}{path}"
     hmac_signature = base64.b64encode(
         hmac.new(
@@ -44,25 +50,40 @@ def build_auth_headers(api_key, api_secret, path):
         ).digest()
     ).decode()
 
-    return {
+    headers = {
         "KEY": api_key,
         "SIGNATURE": hmac_signature,
         "NONCE": nonce,
         "User-Agent": "unbound_export/1.0"
     }
 
+    if DEBUG_MODE:
+        logging.debug(f"Auth Headers: {headers}")
+    return headers
+
 def fetch_unbound_data():
     try:
         path = "/api/unbound/overview/totals/100"
         url = f"https://{OPNSENSE_HOST}:{OPNSENSE_PORT}{path}"
         headers = build_auth_headers(API_KEY, API_SECRET, path)
+
+        if DEBUG:
+            logging.info(f"[DEBUG] Requesting URL: {url}")
+            logging.info(f"[DEBUG] Request headers: {headers}")
+
         response = requests.get(url, headers=headers, verify=False, timeout=10)
+
+        if DEBUG:
+            logging.info(f"[DEBUG] Status code: {response.status_code}")
+            logging.info(f"[DEBUG] Response text: {response.text}")
+
         response.raise_for_status()
         return response.json()
+
     except Exception as e:
         logging.error(f"Failed to fetch data from Unbound API: {e}")
         return None
-
+        
 def update_metrics(data):
     try:
         metrics['total'].set(data.get("total", 0))
@@ -107,4 +128,4 @@ def run_exporter():
 if __name__ == "__main__":
     from threading import Thread
     Thread(target=run_exporter).start()
-    app.run(host="0.0.0.0", port=EXPORTER_PORT)
+    app.run(host="0.0.0.0", port=FLASK_PORT)

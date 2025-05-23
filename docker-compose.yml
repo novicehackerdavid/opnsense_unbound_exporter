@@ -3,7 +3,8 @@ services:
     build: .
     container_name: unbound_export
     ports:
-      - "${EXPORTER_PORT}:9798"
+      - "${EXPORTER_PORT}:9797"
+      - "${FLASK_PORT}:9798"
     environment:
       OPNSENSE_API_KEY: ${OPNSENSE_API_KEY}
       OPNSENSE_API_SECRET: ${OPNSENSE_API_SECRET}
@@ -11,7 +12,5 @@ services:
       EXPORTER_PORT: ${EXPORTER_PORT}
       SCRAPE_INTERVAL: ${SCRAPE_INTERVAL}
       TZ: ${TZ}
-      PUID: ${PUID}
-      PGID: ${PGID}
     restart: unless-stopped
 
