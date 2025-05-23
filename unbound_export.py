@@ -1,57 +1,73 @@
-import os
-import time
 import requests
 from prometheus_client import start_http_server, Gauge
+import time
+import logging
+import os
 
-# Load environment variables
-API_KEY = os.getenv("OPNSENSE_API_KEY")
-API_SECRET = os.getenv("OPNSENSE_API_SECRET")
-OPNSENSE_HOST = os.getenv("OPNSENSE_HOST", "https://192.168.1.1")
-EXPORTER_PORT = int(os.getenv("EXPORTER_PORT", "9798"))
+# Configure logging to file
+logging.basicConfig(
+    filename='/app/unbound_export.log',
+    filemode='w',  # overwrite log on each run
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+OPNSENSE_HOST = os.getenv('OPNSENSE_HOST', '192.168.1.1')
+API_URL = f"https://{OPNSENSE_HOST}/api/unbound/stats"
 
 # Prometheus metrics
-total_queries = Gauge('unbound_total_queries', 'Total DNS queries')
-blocked_queries = Gauge('unbound_blocked_queries', 'Blocked DNS queries')
-passed_queries = Gauge('unbound_passed_queries', 'Passed DNS queries')
-blocklist_size = Gauge('unbound_blocklist_size', 'Size of blocklist')
-top_blocked = Gauge('unbound_top_blocked_domains', 'Top blocked domains', ['domain'])
-top_allowed = Gauge('unbound_top_allowed_domains', 'Top allowed domains', ['domain'])
+total_queries = Gauge('unbound_total_queries', 'Total number of DNS queries')
+blocked_queries = Gauge('unbound_blocked_queries', 'Number of blocked DNS queries')
+allowed_queries = Gauge('unbound_allowed_queries', 'Number of allowed DNS queries')
+top_blocked_domains = Gauge('unbound_top_blocked_domains', 'Top blocked domains', ['domain'])
+top_allowed_domains = Gauge('unbound_top_allowed_domains', 'Top allowed domains', ['domain'])
+blocklist_size = Gauge('unbound_blocklist_size', 'Size of the DNS blocklist')
 
-# Headers for API auth
-headers = {
-    "Authorization": f"Basic {API_KEY}:{API_SECRET}"
-}
+def fetch_unbound_stats():
+    try:
+        response = requests.get(API_URL, verify=False, timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        logging.error(f"Failed to fetch data from Unbound API: {e}")
+        return {}
 
-def fetch_totals():
-    url = f"{OPNSENSE_HOST}/api/unbound/overview/totals/100"
-    response = requests.get(url, verify=False, auth=(API_KEY, API_SECRET))
-    response.raise_for_status()
-    return response.json()
+def update_metrics(data):
+    try:
+        total = data.get("total_queries", 0)
+        blocked = data.get("blocked_queries", 0)
+        allowed = data.get("allowed_queries", 0)
+        top_blocked = data.get("top_blocked", {})
+        top_allowed = data.get("top_allowed", {})
+        bl_size = data.get("blocklist_size", 0)
 
-def update_metrics():
-    data = fetch_totals()
+        total_queries.set(total)
+        blocked_queries.set(blocked)
+        allowed_queries.set(allowed)
+        blocklist_size.set(bl_size)
 
-    total = data.get("total_num_queries", 0)
-    blocked = data.get("num_blocked", 0)
-    passed = total - blocked
+        # Clear previous domain labels to avoid label bloat
+        for label in list(top_blocked_domains._metrics):
+            top_blocked_domains.remove(*label)
+        for label in list(top_allowed_domains._metrics):
+            top_allowed_domains.remove(*label)
 
-    total_queries.set(total)
-    blocked_queries.set(blocked)
-    passed_queries.set(passed)
+        for domain, count in top_blocked.items():
+            top_blocked_domains.labels(domain=domain).set(count)
+        for domain, count in top_allowed.items():
+            top_allowed_domains.labels(domain=domain).set(count)
 
-    blocklist_size.set(len(data.get("blocklisted_domains", [])))
+        logging.info("Metrics updated successfully.")
+    except Exception as e:
+        logging.error(f"Failed to update metrics: {e}")
 
-    for domain, info in data.get("top_blocked", {}).items():
-        top_blocked.labels(domain=domain).set(info.get("count", 0))
-
-    for domain, info in data.get("top_allowed", {}).items():
-        top_allowed.labels(domain=domain).set(info.get("count", 0))
+def main():
+    logging.info(f"Starting unbound_export using OPNSENSE_HOST={OPNSENSE_HOST}")
+    start_http_server(8000)
+    while True:
+        data = fetch_unbound_stats()
+        update_metrics(data)
+        time.sleep(30)
 
 if __name__ == "__main__":
-    start_http_server(EXPORTER_PORT)
-    while True:
-        try:
-            update_metrics()
-        except Exception as e:
-            print(f"Error updating metrics: {e}")
-        time.sleep(60)
+    main()
