@@ -12,7 +12,10 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
+# Environment configuration
 OPNSENSE_HOST = os.getenv('OPNSENSE_HOST', '192.168.1.1')
+EXPORT_PORT = int(os.getenv('EXPORT_PORT', '9798'))
+
 API_URL = f"https://{OPNSENSE_HOST}/api/unbound/stats"
 
 # Prometheus metrics
@@ -62,8 +65,8 @@ def update_metrics(data):
         logging.error(f"Failed to update metrics: {e}")
 
 def main():
-    logging.info(f"Starting unbound_export using OPNSENSE_HOST={OPNSENSE_HOST}")
-    start_http_server(8000)
+    logging.info(f"Starting unbound_export using OPNSENSE_HOST={OPNSENSE_HOST} on PORT={EXPORT_PORT}")
+    start_http_server(EXPORT_PORT)
     while True:
         data = fetch_unbound_stats()
         update_metrics(data)
