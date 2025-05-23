@@ -34,7 +34,7 @@ top_domains_metric = Gauge('unbound_top_domain_queries_total', 'Top queried doma
 top_blocked_metric = Gauge('unbound_top_blocked_domain_queries_total', 'Top blocked domains', ['domain', 'blocklist'])
 
 def build_auth_headers(api_key, api_secret, path):
-    nonce = datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    nonce = str(int(time.time() * 1000))  # use Unix timestamp in milliseconds
     message = f"{nonce}{path}"
     hmac_signature = base64.b64encode(
         hmac.new(

@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   unbound_export:
     build: .
@@ -10,7 +9,9 @@ services:
       OPNSENSE_API_SECRET: ${OPNSENSE_API_SECRET}
       OPNSENSE_HOST: ${OPNSENSE_HOST}
       EXPORTER_PORT: ${EXPORTER_PORT}
+      SCRAPE_INTERVAL: ${SCRAPE_INTERVAL}
       TZ: ${TZ}
       PUID: ${PUID}
       PGID: ${PGID}
     restart: unless-stopped
+
