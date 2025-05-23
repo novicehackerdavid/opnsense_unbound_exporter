@@ -2,6 +2,10 @@ import os
 import time
 import logging
 import requests
+import hmac
+import hashlib
+import base64
+import datetime
 from prometheus_client import start_http_server, Gauge
 from flask import Flask, Response
 
@@ -11,16 +15,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Environment configuration
 OPNSENSE_HOST = os.getenv("OPNSENSE_HOST", "192.168.1.1")
 OPNSENSE_PORT = os.getenv("OPNSENSE_PORT", "443")
-EXPORTER_PORT = int(os.getenv("EXPORT_PORT", "9798"))
+EXPORTER_PORT = int(os.getenv("EXPORTER_PORT", "9798"))
 API_KEY = os.getenv("OPNSENSE_API_KEY")
 API_SECRET = os.getenv("OPNSENSE_API_SECRET")
 INTERVAL = int(os.getenv("SCRAPE_INTERVAL", "30"))
-
-# Endpoint
-UNBOUND_URL = f"https://{OPNSENSE_HOST}:{OPNSENSE_PORT}/api/unbound/overview/totals/100"
-
-# Disable insecure request warnings
-requests.packages.urllib3.disable_warnings()
 
 # Prometheus metrics
 metrics = {
@@ -35,14 +33,30 @@ metrics = {
 top_domains_metric = Gauge('unbound_top_domain_queries_total', 'Top queried domains', ['domain'])
 top_blocked_metric = Gauge('unbound_top_blocked_domain_queries_total', 'Top blocked domains', ['domain', 'blocklist'])
 
-# Auth headers if needed (currently unused)
-HEADERS = {
-    "User-Agent": "unbound_export/1.0",
-}
+def build_auth_headers(api_key, api_secret, path):
+    nonce = datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    message = f"{nonce}{path}"
+    hmac_signature = base64.b64encode(
+        hmac.new(
+            api_secret.encode(),
+            msg=message.encode(),
+            digestmod=hashlib.sha256
+        ).digest()
+    ).decode()
+
+    return {
+        "KEY": api_key,
+        "SIGNATURE": hmac_signature,
+        "NONCE": nonce,
+        "User-Agent": "unbound_export/1.0"
+    }
 
 def fetch_unbound_data():
     try:
-        response = requests.get(UNBOUND_URL, headers=HEADERS, verify=False, timeout=10)
+        path = "/api/unbound/overview/totals/100"
+        url = f"https://{OPNSENSE_HOST}:{OPNSENSE_PORT}{path}"
+        headers = build_auth_headers(API_KEY, API_SECRET, path)
+        response = requests.get(url, headers=headers, verify=False, timeout=10)
         response.raise_for_status()
         return response.json()
     except Exception as e:
@@ -82,8 +96,8 @@ def metrics_endpoint():
     return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
 
 def run_exporter():
-    logging.info(f"Starting unbound_export using OPNSENSE_HOST={OPNSENSE_HOST} on PORT={EXPORT_PORT}")
-    start_http_server(EXPORT_PORT)
+    logging.info(f"Starting unbound_export using OPNSENSE_HOST={OPNSENSE_HOST} on PORT={EXPORTER_PORT}")
+    start_http_server(EXPORTER_PORT)
     while True:
         data = fetch_unbound_data()
         if data:
@@ -93,4 +107,4 @@ def run_exporter():
 if __name__ == "__main__":
     from threading import Thread
     Thread(target=run_exporter).start()
-    app.run(host="0.0.0.0", port=EXPORT_PORT)
+    app.run(host="0.0.0.0", port=EXPORTER_PORT)
