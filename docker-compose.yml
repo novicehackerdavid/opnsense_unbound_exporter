@@ -2,6 +2,8 @@ services:
   unbound_export:
     build: .
     container_name: unbound_export
+    volumes:
+      - /etc/localtime:/etc/localtime:ro  # Sync time with host
     ports:
       - "${EXPORTER_PORT}:9797"
       - "${FLASK_PORT}:9798"
@@ -10,7 +12,8 @@ services:
       OPNSENSE_API_SECRET: ${OPNSENSE_API_SECRET}
       OPNSENSE_HOST: ${OPNSENSE_HOST}
       EXPORTER_PORT: ${EXPORTER_PORT}
+      FLASK_PORT: ${FLASK_PORT}  
       SCRAPE_INTERVAL: ${SCRAPE_INTERVAL}
-      TZ: ${TZ}
+      TZ: America/Chicago
     restart: unless-stopped
 
